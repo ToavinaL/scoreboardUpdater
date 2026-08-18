@@ -4,13 +4,31 @@ import { ref, computed } from 'vue'
 interface Player {
   id: number
   name: string
-  score: number
-  status: 'active' | 'victory' | 'defeat'
 }
 
+interface Fighting {
+  id: number
+  player1Id: number
+  player2Id: number
+  scorePlayer1: number
+  scorePlayer2: number
+  winnerId: number | null
+  status: 'pending' | 'ongoing' | 'finished'
+}
+
+const fighting = ref<Fighting>({
+  id: 1,
+  player1Id: 1,
+  player2Id: 2,
+  scorePlayer1: 0,
+  scorePlayer2: 0,
+  winnerId: null,
+  status: 'pending'
+})
+
 const players = ref<Player[]>([
-  { id: 1, name: 'Toavina', score: 0, status: 'active' },
-  { id: 2, name: 'Steven', score: 0, status: 'active' }
+  { id: 1, name: 'Toavina' },
+  { id: 2, name: 'Steven' }
 ])
 
 const maxScore = ref<number>(3)
@@ -24,62 +42,8 @@ function finishFighting(scorePlayer: number): boolean {
   return scorePlayer >= maxScore.value
 }
 
-/**
- * Increase the score of a player by name
- * @param playerName - The name of the player to increase score
- */
-function increaseScore(playerName: string): void {
-  const player = players.value.find(p => p.name === playerName)
-  if (player && !finishFighting(player.score)) {
-    player.score++
-    updatePlayerStatus(player)
-  }
-}
-
-/**
- * Decrease the score of a player by name
- * @param playerName - The name of the player to decrease score
- */
-function decreaseScore(playerName: string): void {
-  const player = players.value.find(p => p.name === playerName)
-  if (player && player.score > 0) {
-    player.score--
-    updatePlayerStatus(player)
-  }
-}
-
-/**
- * Reset score for a specific player
- * @param playerName - The name of the player whose score to reset
- */
-function resetScore(playerName: string): void {
-  const player = players.value.find(p => p.name === playerName)
-  if (player) {
-    player.score = 0
-    player.status = 'active'
-  }
-}
-
-/**
- * Reset all players' scores
- */
-function resetAllScores(): void {
-  players.value.forEach(player => {
-    player.score = 0
-    player.status = 'active'
-  })
-}
-
-/**
- * Update player status based on their score
- * @param player - The player to update status
- */
-function updatePlayerStatus(player: Player): void {
-  if (finishFighting(player.score)) {
-    player.status = 'victory'
-  } else {
-    player.status = 'active'
-  }
+function getPlayerById(playerId: number): Player | undefined {
+  return players.value.find(player => player.id === playerId)
 }
 
 /**
@@ -88,7 +52,7 @@ function updatePlayerStatus(player: Player): void {
  */
 function addPlayer(name: string): void {
   const newId = Math.max(...players.value.map(p => p.id), 0) + 1
-  players.value.push({ id: newId, name, score: 0, status: 'active' })
+  players.value.push({ id: newId, name })
 }
 
 /**
@@ -100,19 +64,94 @@ function removePlayer(playerId: number): void {
 }
 
 /**
- * Get the winner of the tournament (first player to reach max score)
- * @returns The winning player or null if no winner yet
+ * Increase fighting score for a player
+ * Manages the state cycle: pending → ongoing → finished
+ * @param playerId - The ID of the player whose score to increase
  */
-const winner = computed(() => {
-  return players.value.find(p => p.status === 'victory') || null
+function increaseFightingScore(playerId: number): void {
+  // Determine which player to modify
+  if (playerId === fighting.value.player1Id) {
+    // Modify scorePlayer1
+    if (fighting.value.scorePlayer1 < maxScore.value) {
+      fighting.value.scorePlayer1++
+
+      // Check if player1 has reached max score
+      if (fighting.value.scorePlayer1 >= maxScore.value) {
+        fighting.value.winnerId = playerId
+        fighting.value.status = 'finished'
+      } else {
+        fighting.value.status = 'ongoing'
+      }
+    }
+  } else if (playerId === fighting.value.player2Id) {
+    // Modify scorePlayer2
+    if (fighting.value.scorePlayer2 < maxScore.value) {
+      fighting.value.scorePlayer2++
+
+      // Check if player2 has reached max score
+      if (fighting.value.scorePlayer2 >= maxScore.value) {
+        fighting.value.winnerId = playerId
+        fighting.value.status = 'finished'
+      } else {
+        fighting.value.status = 'ongoing'
+      }
+    }
+  }
+}
+
+/**
+ * Decrease fighting score for a player
+ * @param playerId - The ID of the player whose score to decrease
+ */
+function decreaseFightingScore(playerId: number): void {
+  if (playerId === fighting.value.player1Id) {
+    if (fighting.value.scorePlayer1 > 0) {
+      fighting.value.scorePlayer1--
+      // Reset status to ongoing if it was finished
+      if (fighting.value.status === 'finished') {
+        fighting.value.winnerId = null
+        fighting.value.status = 'ongoing'
+      }
+    }
+  } else if (playerId === fighting.value.player2Id) {
+    if (fighting.value.scorePlayer2 > 0) {
+      fighting.value.scorePlayer2--
+      // Reset status to ongoing if it was finished
+      if (fighting.value.status === 'finished') {
+        fighting.value.winnerId = null
+        fighting.value.status = 'ongoing'
+      }
+    }
+  }
+}
+
+/**
+ * Reset the fighting state to pending with scores at 0
+ */
+function resetFighting(): void {
+  fighting.value.scorePlayer1 = 0
+  fighting.value.scorePlayer2 = 0
+  fighting.value.winnerId = null
+  fighting.value.status = 'pending'
+}
+
+/**
+ * Get the winner of the current fight
+ * @returns The winning player or null if fight is not finished
+ */
+const fightWinner = computed(() => {
+  if (fighting.value.status === 'finished' && fighting.value.winnerId) {
+    return getPlayerById(fighting.value.winnerId) || null
+  }
+  return null
 })
 
 /**
- * Check if tournament is ongoing
- * @returns true if any player is still active, false otherwise
+ * Check if fight is ongoing
+ * @returns true if fight is in progress, false otherwise
  */
-const isTournamentOngoing = computed(() => {
-  return players.value.some(p => p.status === 'active')
+const isFightOngoing = computed(() => {
+  return fighting.value.status === 'ongoing'
 })
 
 const tournamentName: string = 'MEGABEAST Championship'
@@ -135,41 +174,43 @@ const playerCount: number = 32
       </div>
     </header>
 
-    <div v-if="winner" class="winner-section">
+    <div v-if="fightWinner" class="winner-section">
       <h2>🏆 VICTOIRE 🏆</h2>
-      <p>{{ winner.name }} remporte le tournoi !</p>
-      <button @click="resetAllScores">Nouveau tournoi</button>
+      <p>{{ fightWinner.name }} gagne ce combat !</p>
+      <button @click="resetFighting">Prochain combat</button>
     </div>
 
-    <div class="scoreboard">
-      <div v-for="player in players" :key="player.id" class="player-card">
-        <h3>{{ player.name }}</h3>
-        <div class="score-display">
-          <span class="score">{{ player.score }}</span>
-          <span class="max-score">/ {{ maxScore }}</span>
-        </div>
-        
-        <div class="button-group">
-          <button @click="increaseScore(player.name)" class="btn-increase">+</button>
-          <button @click="decreaseScore(player.name)" class="btn-decrease">-</button>
-          <button @click="resetScore(player.name)" class="btn-reset">Reset</button>
-          <button @click="removePlayer(player.id)" class="btn-remove">Supprimer</button>
+    <div class="fighting-section">
+      <h2>Combat en direct</h2>
+      <div class="fighting-container">
+        <div class="fighter fighter-1">
+          <h3>{{ getPlayerById(fighting.player1Id)?.name }}</h3>
+          <div class="fighting-score">{{ fighting.scorePlayer1 }}</div>
+          <div class="fighting-buttons">
+            <button @click="increaseFightingScore(fighting.player1Id)" class="btn-score-increase">+</button>
+            <button @click="decreaseFightingScore(fighting.player1Id)" class="btn-score-decrease">-</button>
+          </div>
         </div>
 
-        <div class="status">
-          <p v-if="player.status === 'victory'" class="victory">
-            ✓ VICTOIRE !
-          </p>
-          <p v-else class="active">
-            Match en cours...
-          </p>
+        <div class="fighting-status">
+          <p class="status-badge" :class="fighting.status">{{ fighting.status.toUpperCase() }}</p>
+          <p class="max-score-info">Meilleur des {{ maxScore }}</p>
+          <div v-if="fighting.status === 'finished' && fighting.winnerId !== null" class="winner-display">
+            <p class="winner-text">🏆 {{ getPlayerById(fighting.winnerId)?.name }} gagne ! 🏆</p>
+          </div>
+          <button v-if="fighting.status === 'finished'" @click="resetFighting" class="btn-next-fight">Prochain combat</button>
+        </div>
+
+        <div class="fighter fighter-2">
+          <h3>{{ getPlayerById(fighting.player2Id)?.name }}</h3>
+          <div class="fighting-score">{{ fighting.scorePlayer2 }}</div>
+          <div class="fighting-buttons">
+            <button @click="increaseFightingScore(fighting.player2Id)" class="btn-score-increase">+</button>
+            <button @click="decreaseFightingScore(fighting.player2Id)" class="btn-score-decrease">-</button>
+          </div>
         </div>
       </div>
     </div>
-
-    <footer class="controls">
-      <button @click="resetAllScores" class="btn-reset-all">Réinitialiser tous les scores</button>
-    </footer>
   </main>
 </template>
 
@@ -221,132 +262,169 @@ h1 {
   50% { transform: scale(1.05); }
 }
 
-.scoreboard {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.player-card {
-  border: 3px solid #333;
-  border-radius: 10px;
-  padding: 20px;
-  background-color: #f5f5f5;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.player-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-}
-
-.player-card h3 {
-  font-size: 1.5em;
-  margin: 0 0 15px 0;
-  color: #333;
-}
-
-.score-display {
-  font-size: 2em;
-  margin-bottom: 15px;
-  text-align: center;
-}
-
-.score {
-  font-weight: bold;
-  color: #d4af37;
-  font-size: 1.5em;
-}
-
-.max-score {
-  color: #666;
-}
-
-.button-group {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-  flex-wrap: wrap;
-}
-
-button {
-  padding: 8px 12px;
-  font-size: 1em;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  flex: 1;
-  min-width: 60px;
-}
-
-.btn-increase {
-  background-color: #4caf50;
+.fighting-section {
+  margin-top: 40px;
+  padding: 30px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  border-radius: 15px;
   color: white;
 }
 
-.btn-increase:hover {
-  background-color: #45a049;
+.fighting-section h2 {
+  text-align: center;
+  font-size: 2em;
+  margin-bottom: 30px;
+  color: #d4af37;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-.btn-decrease {
+.fighting-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.fighter {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 2px solid #d4af37;
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.fighter:hover {
+  background-color: rgba(212, 175, 55, 0.1);
+  transform: scale(1.05);
+}
+
+.fighter h3 {
+  font-size: 1.5em;
+  margin: 0 0 15px 0;
+  color: #d4af37;
+}
+
+.fighting-score {
+  font-size: 4em;
+  font-weight: bold;
+  color: #ffd700;
+  margin: 20px 0;
+  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.fighting-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.btn-score-increase {
+  background-color: #4caf50;
+  color: white;
+  padding: 10px 15px;
+  font-size: 1.2em;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-score-increase:hover {
+  background-color: #45a049;
+  transform: scale(1.1);
+}
+
+.btn-score-decrease {
+  background-color: #ff9800;
+  color: white;
+  padding: 10px 15px;
+  font-size: 1.2em;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-score-decrease:hover {
+  background-color: #e68900;
+  transform: scale(1.1);
+}
+
+.fighting-status {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+}
+
+.status-badge {
+  font-size: 1.5em;
+  font-weight: bold;
+  padding: 10px 20px;
+  border-radius: 20px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.status-badge.pending {
   background-color: #ff9800;
   color: white;
 }
 
-.btn-decrease:hover {
-  background-color: #e68900;
-}
-
-.btn-reset {
+.status-badge.ongoing {
   background-color: #2196f3;
   color: white;
+  animation: blink 1s infinite;
 }
 
-.btn-reset:hover {
-  background-color: #0b7dda;
-}
-
-.btn-remove {
-  background-color: #f44336;
+.status-badge.finished {
+  background-color: #4caf50;
   color: white;
 }
 
-.btn-remove:hover {
-  background-color: #da190b;
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
-.btn-reset-all {
+.max-score-info {
+  font-size: 1em;
+  color: #b0bec5;
+  margin: 0;
+}
+
+.winner-display {
+  background-color: #ffd700;
+  color: #000;
+  padding: 15px;
+  border-radius: 10px;
+  margin: 10px 0;
+  animation: pulse 0.8s infinite;
+}
+
+.winner-text {
+  font-size: 1.3em;
+  font-weight: bold;
+  margin: 0;
+  color: #d4af37;
+}
+
+.btn-next-fight {
   background-color: #9c27b0;
   color: white;
-  padding: 10px 20px;
-  font-size: 1.1em;
-}
-
-.btn-reset-all:hover {
-  background-color: #7b1fa2;
-}
-
-.status {
-  text-align: center;
-  margin-top: 10px;
-}
-
-.victory {
-  color: #4caf50;
-  font-weight: bold;
-  font-size: 1.2em;
-}
-
-.active {
-  color: #ff9800;
+  padding: 12px 24px;
   font-size: 1em;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.controls {
-  text-align: center;
-  padding-top: 20px;
-  border-top: 2px solid #333;
+.btn-next-fight:hover {
+  background-color: #7b1fa2;
+  transform: scale(1.05);
 }
 </style>
