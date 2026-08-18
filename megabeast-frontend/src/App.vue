@@ -181,7 +181,7 @@ const playerCount: number = 32
     </div>
 
     <div class="fighting-section">
-      <h2>Combat en direct</h2>
+      <FightingScoreboard />
       <div class="fighting-container">
         <div class="fighter fighter-1">
           <h3>{{ getPlayerById(fighting.player1Id)?.name }}</h3>
